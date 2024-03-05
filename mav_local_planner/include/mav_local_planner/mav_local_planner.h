@@ -26,6 +26,8 @@
 #include <voxblox_loco_planner/voxblox_loco_planner.h>
 #include <voxblox_ros/esdf_server.h>
 
+#include <mrs_msgs/TrajectoryReferenceSrv.h>
+
 namespace mav_planning {
 
 class MavLocalPlanner {
@@ -62,6 +64,7 @@ class MavLocalPlanner {
   // Control for publishing.
   void startPublishingCommands();
   void commandPublishTimerCallback(const ros::TimerEvent& event);
+  mrs_msgs::TrajectoryReferenceSrv convert_traj_to_mrs_srv(const trajectory_msgs::MultiDOFJointTrajectory &trajectory);
 
   // Control for planning.
   void planningTimerCallback(const ros::TimerEvent& event);
@@ -122,6 +125,7 @@ class MavLocalPlanner {
   // Service client for getting the MAV interface to listen to our sent
   // commands.
   ros::ServiceClient position_hold_client_;
+  ros::ServiceClient mrs_controller_client;
 
   // ROS async handling: callback queues and spinners for command publishing,
   // which is on a separate thread from the rest of the functions.
@@ -135,12 +139,16 @@ class MavLocalPlanner {
   ros::Timer command_publishing_timer_;
   ros::Timer planning_timer_;
 
+  // Settings -- mrs controller service name
+    std::string mrs_controller_service_name_;
+
   // Settings -- general
   bool verbose_;
 
   // Settings -- frames
   std::string global_frame_id_;
   std::string local_frame_id_;
+
 
   // Settings -- constraints.
   PhysicalConstraints constraints_;

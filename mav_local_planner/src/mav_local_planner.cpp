@@ -50,8 +50,11 @@ MavLocalPlanner::MavLocalPlanner(const ros::NodeHandle& nh,
   nh_private_.param("plan_to_start", plan_to_start_, plan_to_start_);
   nh_private_.param("smoother_name", smoother_name_, smoother_name_);
 
+  nh_private_.param("mrs_controller_service_name", mrs_controller_service_name_,
+                    mrs_controller_service_name_);
+
   // Publishers and subscribers.
-  odometry_sub_ = nh_.subscribe(mav_msgs::default_topics::ODOMETRY, 1,
+  odometry_sub_ = nh_.subscribe("odometry", 1,
                                 &MavLocalPlanner::odometryCallback, this);
   waypoint_sub_ =
       nh_.subscribe("waypoint", 1, &MavLocalPlanner::waypointCallback, this);
@@ -77,6 +80,10 @@ MavLocalPlanner::MavLocalPlanner(const ros::NodeHandle& nh,
 
   position_hold_client_ =
       nh_.serviceClient<std_srvs::Empty>("back_to_position_hold");
+
+  mrs_controller_client = 
+      nh_.serviceClient<mrs_msgs::TrajectoryReferenceSrv>(mrs_controller_service_name_);
+
 
   // Start the planning timer. Will no-op most cycles.
   ros::TimerOptions timer_options(
@@ -552,11 +559,57 @@ void MavLocalPlanner::commandPublishTimerCallback(
         trajectory_to_publish.back().position_W.x());
     mav_msgs::msgMultiDofJointTrajectoryFromEigen(trajectory_to_publish, &msg);
 
+    mrs_msgs::TrajectoryReferenceSrv mrs_traj_srv = convert_traj_to_mrs_srv(msg);
+    bool srv_status = mrs_controller_client.call(mrs_traj_srv);
+
+    if(!srv_status){
+      ROS_ERROR("[Mav Local Planner][Command Publish] Failed to call mrs controller service");
+    } else if (!mrs_traj_srv.response.success){
+      ROS_ERROR("[Mav Local Planner][Command Publish] Failed to send trajectory to mrs controller %s",
+                mrs_traj_srv.response.message.c_str());
+    }
+
     command_pub_.publish(msg);
     path_index_ += number_to_publish;
     should_replan_.notify();
   }
   // Does there need to be an else????
+}
+
+mrs_msgs::TrajectoryReferenceSrv MavLocalPlanner::convert_traj_to_mrs_srv(const trajectory_msgs::MultiDOFJointTrajectory &trajectory)
+{
+    static int id = 0;
+    mrs_msgs::TrajectoryReferenceSrv traj_srv;
+    mrs_msgs::TrajectoryReference traj_msg;
+    traj_msg.header.frame_id = trajectory.header.frame_id;
+    traj_msg.header.stamp = trajectory.header.stamp;
+
+    traj_msg.use_heading = false;
+    traj_msg.fly_now = true;
+    traj_msg.input_id = id++;
+
+    if (trajectory.points.size() < 2){
+        ROS_WARN("Trajectory has less than 2 points, cannot convert to mrs_msgs::TrajectoryReference");
+        traj_msg.fly_now = false;
+        return traj_srv;
+    }else
+        traj_msg.dt = trajectory.points[1].time_from_start.toSec() - trajectory.points[0].time_from_start.toSec();
+
+    for (int i = 0; i < trajectory.points.size(); ++i)
+    {
+        mrs_msgs::Reference p;
+        p.position.x = trajectory.points[i].transforms[0].translation.x;
+        p.position.y = trajectory.points[i].transforms[0].translation.y;
+        p.position.z = trajectory.points[i].transforms[0].translation.z;
+
+        p.heading = 0.0;
+
+        traj_msg.points.push_back(p);
+    }
+
+    traj_srv.request.trajectory = traj_msg;
+
+    return traj_srv;
 }
 
 void MavLocalPlanner::abort() {

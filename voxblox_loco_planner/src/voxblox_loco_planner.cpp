@@ -286,6 +286,11 @@ bool VoxbloxLocoPlanner::getTrajectoryTowardGoal(
   // horizon is occupied.
   bool goal_found = true;
   if (use_shotgun_) {
+    ROS_INFO("[Shotgun] Start point is %f %f %f", start_point.position_W.x(),
+             start_point.position_W.y(), start_point.position_W.z());
+    ROS_INFO("[Shotgun] Goal point is %f %f %f", goal_point.position_W.x(),
+             goal_point.position_W.y(), goal_point.position_W.z());
+             
     goal_found = findIntermediateGoalShotgun(start_point, goal_point,
                                              &goal_point, &shotgun_path);
     if (verbose_) {
